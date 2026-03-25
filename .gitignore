@@ -1,0 +1,19 @@
+data/checkpoints/
+data/logs/
+*.pyc, __pycache__/
+*/__pycache__/
+__pycache__
+.ruff_cache/
+.claude/
+.pytest_cache/
+.pre-commit-config.yaml
+.env/
+.venv/, venv/
+.ipynb_checkpoints/
+.pt
+.pth
+.pyc
+logs/
+agent_docs/
+models/
+data/
