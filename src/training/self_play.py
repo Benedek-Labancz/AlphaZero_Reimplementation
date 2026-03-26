@@ -20,8 +20,9 @@ def play_episode(tree: Tree,
     current = tree.root
     move_count = 0
     while not current.is_terminal():
-        ep_states.append(current.state.copy())
-        if current.priors is not None:
+        # Save flattened representation of board so that training can happen out of the box
+        ep_states.append(current.env.to_flat_representation(current.state.copy()))
+        if current.priors is not None: # At the very beginning of the game, we have no priors
             # Sample Dirichlet noise and add it to root priors
             dir_dist = Dirichlet(torch.tensor(len(current.priors) * [noise_concentration]))
             current.priors = (1 - epsilon) * current.priors + epsilon * dir_dist.sample()
@@ -32,7 +33,11 @@ def play_episode(tree: Tree,
             c=c,
             tau=tau
         )
-        ep_pi_values.append(pi_values)
+        # We need to pad search probabilities with 0s for invalid actions
+        action_mask = current.action_mask.reshape(-1)
+        padded_pi_values = np.zeros_like(action_mask, dtype=np.float32)
+        padded_pi_values[action_mask.nonzero()] = pi_values
+        ep_pi_values.append(padded_pi_values)
         # Early in the game, we use pi values to select actions
         if move_count < early_selection_threshold:
             selected_edge = np.random.choice(current.out_edges, p=pi_values)
@@ -45,12 +50,16 @@ def play_episode(tree: Tree,
         # Set new node as root, discard the rest of the tree
         current = selected_edge.to
         tree = Tree(root=current)
+        move_count += 1
     # Get the actual winner, and back up the values for supervised learning examples
     # The sign alternates as player roles alternate
     r = current.env.get_winner(current.state)
     for _ in range(len(ep_states)):
         ep_winners.insert(0, r)
         r = -1 * r
+    ep_states = np.stack(ep_states)
+    ep_pi_values = np.stack(ep_pi_values)
+    ep_winners = np.array(ep_winners)
     return ep_states, ep_pi_values, ep_winners
 
         
