@@ -36,9 +36,11 @@ class BaseEnv(gym.Env, ABC):
 		self.observation_space = spaces.MultiDiscrete(
 			2 * np.ones([self._num_planes] + (self._num_dimensions * [self._board_size]))
 		)
+		self.total_num_squares = self.observation_space.nvec.prod()
 
 		# Actions are represented by coordinates
 		self.action_space = spaces.MultiDiscrete(self._num_dimensions * [self._board_size])
+		self.total_num_actions = self.action_space.nvec.prod()
 
 		# To be defined by subclass
 		self._initial_state = self._get_initial_board()
@@ -112,7 +114,7 @@ class BaseEnv(gym.Env, ABC):
 		determines the reward,
 		asserts terminal state and truncation, switches players.
 		"""
-		if not self.is_valid(action):
+		if not self.is_valid(state, action):
 			raise Exception(f'Invalid action {tuple(action)} encountered.')
 
 		# Make sure that passed-in state is not overwritten
@@ -134,8 +136,6 @@ class BaseEnv(gym.Env, ABC):
 		"""
 		Uses environment dynamics to simulate a step and executes that step.
 		"""
-		if not self.is_valid(action):
-			raise Exception(f'Invalid action {tuple(action)} encountered.')
 		observation, reward, terminated, truncated, info = self.simulate_step(
 			self._board_state, action
 		)
@@ -144,11 +144,11 @@ class BaseEnv(gym.Env, ABC):
 			self._last_action_to_render = action.copy()
 		return observation, reward, terminated, truncated, info
 
-	def is_valid(self, action: np.array) -> bool:
+	def is_valid(self, state: np.array, action: np.array) -> bool:
 		try:
 			if action.size != self._num_dimensions:
 				return False
-			return self.get_action_mask(self._board_state)[*action] == 1
+			return self.get_action_mask(state)[*action] == 1
 		except AttributeError as e:
 			raise Exception(f'Action {action} could not be validated; {e}.')
 
