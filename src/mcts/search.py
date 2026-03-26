@@ -20,11 +20,16 @@ def run_simulation(tree: Tree, policy: Any, c: float) -> Tree:
         current = selected_edge.to
         # Save our path through the tree
         current.save_in_edge(selected_edge)
-    flat_representation = current.env.to_flat_representation(current.state)
-    action_probs, v = policy(torch.as_tensor(flat_representation, dtype=torch.float32))
-    action_probs = action_probs.squeeze()
-    v = v.squeeze()
-    current.expand(priors=action_probs, c=c)
+    if current.is_terminal():
+        # If we have reached a terminal state,
+        # we use the true value instead of the network estimate for backup
+        v = current.env.get_winner(current.state)
+    else:
+        flat_representation = current.env.to_flat_representation(current.state)
+        action_probs, v = policy(torch.as_tensor(flat_representation, dtype=torch.float32))
+        action_probs = action_probs.squeeze()
+        v = v.squeeze()
+        current.expand(priors=action_probs, c=c)
     while current != tree.root:
         v = -v # Player perspectives are flipped at each level
         current.in_edge.update(v)
@@ -43,7 +48,7 @@ def run_mcts(tree: Tree,
     n = 0
     pbar = tqdm(total=num_simulations)
     while n < num_simulations:
-        tree = run_simulation(tree=tree, policy=policy, c=c)
+        run_simulation(tree=tree, policy=policy, c=c)
         n += 1
         pbar.update()
     pi_values = tree.root.get_pi_values(tau=tau)
