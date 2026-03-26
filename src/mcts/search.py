@@ -12,11 +12,10 @@ def run_simulation(tree: Tree, policy: Any, c: float) -> Tree:
         with torch.no_grad():
             current.update_qu_values(c=c)
             selected_edge_idx = np.argmax(current.qu_values)
-        if current.out_edges[selected_edge_idx] is None:
-            current.add_out_edge(selected_edge_idx) # Add Edge instance to current.out_edges
-        selected_edge = current.out_edges[selected_edge_idx]
+            selected_edge = current.out_edges[selected_edge_idx]
         # Traverse to node where the edge leads
-        selected_edge.add_destination_node(tree=tree) # Tree is needed to check for existing nodes and add new one if needed
+        if selected_edge.n == 0:
+            selected_edge.add_destination_node(tree=tree) # Tree is needed to check for existing nodes and add new one if needed
         current = selected_edge.to
         # Save our path through the tree
         current.save_in_edge(selected_edge)

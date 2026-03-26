@@ -26,7 +26,9 @@ class Tree:
 				self.add_node(current)
 			if not current.is_leaf():
 				for edge in current.out_edges:
-					queue.insert(0, edge.to)
+					# Only has destination node if it has been traversed at least once
+					if edge.n > 0:
+						queue.insert(0, edge.to)
 		
 
 class Node:
@@ -53,7 +55,7 @@ class Node:
 		"""
 		Compute valid actions,
 		Set priors,
-		but do not construct edges.
+		Construct edges.
 		"""
 		if self.env.is_terminal(self.state):
 			# If state is terminal, there's noting to expand
@@ -62,14 +64,11 @@ class Node:
 			action_mask = self.env.get_action_mask(self.state)
 			self.valid_actions = np.stack(action_mask.nonzero()).T
 			self.priors = priors[np.nonzero(action_mask.reshape(-1))]
-			self.out_edges = len(self.valid_actions) * [None]
-
-	def add_out_edge(self, edge_idx: int):
-		if self.out_edges[edge_idx] is not None:
-			raise Exception("Trying to add existing edge.")
-		self.out_edges[edge_idx] = Edge(
-			env=self.env, frm=self, action=self.valid_actions[edge_idx], p=self.priors[edge_idx]
-		)
+			self.out_edges = [
+				Edge(
+					env=self.env, frm=self, action=action, p=self.priors[i]
+				) for i, action in enumerate(self.valid_actions)
+			]
 
 	def is_leaf(self):
 		return self.out_edges is None
@@ -80,8 +79,6 @@ class Node:
 	def update_qu_values(self, c: float):
 		"""
 		Compute Q(s, a) + U(s, a) for each outgoing edge.
-		If edge is not yet traversed (i.e. None), then
-		we assume Q = 0 and N = 0
 		"""
 		# WARN: the paper is ambigous here.
 		# In my reading, U(s, a) = 0 if all other
@@ -90,22 +87,12 @@ class Node:
 		# but we may want to consider selecting values based on the prior
 		if self.is_leaf():
 			raise Exception("U-values cannot be computed for leaf node.")
-		self.qu_values = []
 		sum_n_sb = 0
 		for edge in self.out_edges:
-			if edge is not None:
-				sum_n_sb += edge.n
+			sum_n_sb += edge.n
 		sqrt_sum_n_sb = np.sqrt(sum_n_sb)
 		# U(s, a) = c*P*(sqrt(sum_b N(s, b))/ 1 + N(s, a))
-		for i, edge in enumerate(self.out_edges):
-			if edge is None:
-				self.qu_values.append(
-					c * self.priors[i] * sqrt_sum_n_sb
-				) 
-			else:
-				self.qu_values.append(
-					edge.q + (c * edge.p * (sqrt_sum_n_sb / (1 + edge.n)))
-				)
+		self.qu_values = [edge.q + (c * self.priors[i] * (sqrt_sum_n_sb / (1 + edge.n))) for i, edge in enumerate(self.out_edges)]
 		self.qu_values = np.array(self.qu_values)
 	
 	def get_pi_values(self, tau: float):
@@ -113,14 +100,8 @@ class Node:
 			raise Exception("Search probabilities cannot be computed for leaf node.")
 		sum_exp_nbs = 0
 		for edge in self.out_edges:
-			if edge is not None:
-				sum_exp_nbs += edge.n ** (1 / tau)
-		pi_values = []
-		for edge in self.out_edges:
-			if edge is None:
-				pi_values.append(0)
-			else:
-				pi_values.append((edge.n ** (1 / tau)) / sum_exp_nbs)
+			sum_exp_nbs += edge.n ** (1 / tau)
+		pi_values = [(edge.n ** (1 / tau)) / sum_exp_nbs for edge in self.out_edges]
 		return np.array(pi_values)
 	
 
@@ -137,7 +118,6 @@ class Edge:
 		self.n = 0
 		self.w = 0
 		self.q = 0
-		self.p = p
 
 	def __eq__(self, edge):
 		return self.frm == edge.frm and self.to == edge.to
