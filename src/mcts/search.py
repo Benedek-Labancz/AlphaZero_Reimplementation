@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 from typing import Any
-from tqdm import tqdm
 
 from .tree import Tree
 
@@ -24,11 +23,13 @@ def run_simulation(tree: Tree, policy: Any, c: float) -> Tree:
         # we use the true value instead of the network estimate for backup
         v = current.env.get_winner(current.state)
     else:
+        # TODO: add dihedral reflection or rotation
         flat_representation = current.env.to_flat_representation(current.state)
+        # TODO: if running multiple instances of MCTS, add state to queue and evaluate in batches
         action_probs, v = policy(torch.as_tensor(flat_representation, dtype=torch.float32))
         action_probs = action_probs.squeeze()
         v = v.squeeze()
-        current.expand(priors=action_probs, c=c)
+        current.expand(priors=action_probs)
     while current != tree.root:
         v = -v # Player perspectives are flipped at each level
         current.in_edge.update(v)
@@ -45,10 +46,8 @@ def run_mcts(tree: Tree,
     return the updated tree and the search_probabilities pi.
     """
     n = 0
-    pbar = tqdm(total=num_simulations)
     while n < num_simulations:
         run_simulation(tree=tree, policy=policy, c=c)
         n += 1
-        pbar.update()
     pi_values = tree.root.get_pi_values(tau=tau)
     return tree, pi_values

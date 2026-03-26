@@ -35,6 +35,7 @@ class Node:
 	def __init__(self, env, state: np.array, in_edge = None):
 		self.env = env
 		self.state = state
+		self.action_mask = self.env.get_action_mask(self.state)
 		self.in_edge = in_edge
 		self.valid_actions = None
 		self.priors = None
@@ -51,7 +52,7 @@ class Node:
 		# Several incoming edges exist in theory
 		self.in_edge = edge
 
-	def expand(self, priors: np.array, c: float):
+	def expand(self, priors: np.array):
 		"""
 		Compute valid actions,
 		Set priors,
@@ -61,14 +62,19 @@ class Node:
 			# If state is terminal, there's noting to expand
 			pass
 		else:
-			action_mask = self.env.get_action_mask(self.state)
-			self.valid_actions = np.stack(action_mask.nonzero()).T
-			self.priors = priors[np.nonzero(action_mask.reshape(-1))]
+			self.valid_actions = np.stack(self.action_mask.nonzero()).T
+			self.priors = priors[np.nonzero(self.action_mask.reshape(-1))]
 			self.out_edges = [
 				Edge(
-					env=self.env, frm=self, action=action, p=self.priors[i]
+					env=self.env, frm=self, action=action
 				) for i, action in enumerate(self.valid_actions)
 			]
+
+	def get_out_edge_by_action(self, action: np.array):
+		for edge in self.out_edges:
+			if np.array_equal(edge.action, action):
+				return edge
+		return None
 
 	def is_leaf(self):
 		return self.out_edges is None
@@ -109,7 +115,7 @@ class Node:
 
 
 class Edge:
-	def __init__(self, env, frm: Node, action: np.array, p: float):
+	def __init__(self, env, frm: Node, action: np.array):
 		self.env = env
 		self.frm: Node = frm
 		self.action = action
