@@ -4,7 +4,10 @@ from src.mcts.tree import Tree, Node
 from src.mcts.search import run_mcts
 
 
-def select_action(tree: Tree, policy, num_simulations: int, c: float):
+def select_az_action(tree: Tree, policy, num_simulations: int, c: float, **kwargs):
+    '''
+    Run N simulations then select the action with the highest search probability.
+    '''
     _, pi_values = run_mcts(
         tree=tree,
         policy=policy,
@@ -17,14 +20,25 @@ def select_action(tree: Tree, policy, num_simulations: int, c: float):
     return action
 
 
-def evaluate_policy(env, 
+def play_episodes(env, 
                     best_policy, 
-                    candidate_policy, 
+                    candidate_policy,
+                    best_select_action_fn: callable,
+                    candidate_select_action_fn: callable,
                     num_games: int, 
                     num_simulations: int,
-                    c: float):
-    num_wins = 0
+                    c: float,
+                    **kwargs):
+    '''
+    Play an episode of the provided environment using
+    two (potentially different) policies.
+    Two search trees are maintained in parallel.
+
+    
+    '''
+    num_wins = [0, 0]
     policies = [best_policy, candidate_policy]
+    select_action_fns = [best_select_action_fn, candidate_select_action_fn]
     for i in range(num_games):
         initial_state, _ = env.reset()
         trees = [
@@ -37,34 +51,35 @@ def evaluate_policy(env,
         done = False
         num_steps = 0
         while not done:
+            env.render() # Allow for user interaction; ignored if env.render_mode == None
             # Select the action based on the current player's policy
-            action = select_action(
+            action = select_action_fns[current_player](
                 tree=trees[current_player],
                 policy=policies[current_player],
                 num_simulations=num_simulations,
-                c=c
+                c=c,
+                **kwargs
             )
             state, _, terminated, truncated, _ = env.step(action)
+            #print(action)
             # Traverse the selected edge on both trees
             for i, tree in enumerate(trees):
                 if tree.root.is_leaf():
-                    # We can expand this node with dummy priors, as it is going to be discarded
-                    tree.root.expand(priors=np.zeros(tree.root.env.total_num_actions))
+                    # We can expand this node without priors, as it is going to be discarded
+                    tree.root.expand()
                 traversed_edge = tree.root.get_out_edge_by_action(action)
                 if traversed_edge.n == 0:
                     traversed_edge.add_destination_node(tree=tree)
                 trees[i] = Tree(root=traversed_edge.to)
-                # assert np.array_equal(trees[i].root.state, state)
+                assert np.array_equal(trees[i].root.state, state)
             # Switch players
             current_player = 1 - current_player
             num_steps += 1
             done = (terminated or truncated)
         winner = env.get_winner(state)
-        if current_player == 0 and winner == -1:
-            # Best policy lost
-            num_wins += 1
-        elif current_player == 1 and winner == 1:
-            # Candidate policy won
-            num_wins += 1
+        if winner == 1:
+            num_wins[current_player] += 1
+        elif winner == -1:
+            num_wins[1 - current_player] += 1
     env.close()
-    return num_wins / num_games
+    return num_wins
