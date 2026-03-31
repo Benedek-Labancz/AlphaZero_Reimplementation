@@ -22,6 +22,7 @@ class BaseEnv(gym.Env, ABC):
 		self,
 		render_mode: Optional[str] = None,
 		max_timesteps: Optional[int] = None,
+		override: Optional[bool] = False,
 		**kwargs,
 	) -> None:
 		super().__init__()
@@ -30,6 +31,7 @@ class BaseEnv(gym.Env, ABC):
 
 		self._render_mode = render_mode
 		self._max_timesteps = np.inf if max_timesteps is None else max_timesteps
+		self._override = override # override validation
 
 		# An observation consists of 6 binary masks:
 		# (X_t, X_t-1, Y_t, Y_t-1, I, C)
@@ -66,6 +68,7 @@ class BaseEnv(gym.Env, ABC):
 		return cls._num_dimensions
 
 	def get_board_state(self) -> np.array:
+		self._validate(self._board_state)
 		return self._board_state
 
 	def get_action_mask(self, state: np.array) -> np.array:
@@ -102,6 +105,7 @@ class BaseEnv(gym.Env, ABC):
 		"""
 		new_state = state[self._y_planes + self._x_planes + [self._i_plane, self._c_plane], ...]
 		new_state[self._c_plane] = 1 - new_state[self._c_plane]
+		self._validate(new_state)
 		return new_state
 
 	def simulate_step(
@@ -123,7 +127,9 @@ class BaseEnv(gym.Env, ABC):
 		state_copy[self._x_planes[1], ...] = state_copy[self._x_planes[0], ...].copy()
 		# Flip bit to play move
 		state_copy[self._x_planes[0], *action] = 1
+		self._validate(state_copy)
 		observation = self.switched_player_state(state_copy)
+		self._validate(observation)
 		reward = self._get_reward(state, action)
 		terminated = self.is_terminal(state_copy)
 		truncated = (
@@ -145,6 +151,7 @@ class BaseEnv(gym.Env, ABC):
 		return observation, reward, terminated, truncated, info
 
 	def is_valid(self, state: np.array, action: np.array) -> bool:
+		self._validate(state)
 		try:
 			if action.size != self._num_dimensions:
 				return False
@@ -183,7 +190,31 @@ class BaseEnv(gym.Env, ABC):
 		return total_score
 
 	def _get_initial_board(self) -> np.array:
-		return np.zeros([self._num_planes] + (self._num_dimensions * [self._board_size]))
+		state = np.zeros([self._num_planes] + (self._num_dimensions * [self._board_size]))
+		self._validate(state)
+		return state
+	
+	def _validate(cls, arr):
+		if cls._override:
+			return
+		# Has all its planes
+		assert arr.shape[0] == cls._num_planes
+		# X and Y does not have entries at the same position
+		assert np.all(arr[cls._x_planes, ...] * arr[cls._y_planes, ...] == 0)
+		# The difference between temporal planes is one, if it is not all zeros (i.e. initial state)
+		if not (np.all(arr[cls._x_planes[0], ...] == 0) and np.all(arr[cls._x_planes[1], ...] == 0)):
+			assert (arr[cls._x_planes[0], ...] != arr[cls._x_planes[1], ...]).sum() == 1
+		if not (np.all(arr[cls._y_planes[0], ...] == 0) and np.all(arr[cls._y_planes[1], ...] == 0)):
+			assert (arr[cls._y_planes[0], ...] != arr[cls._y_planes[1], ...]).sum() <= 1
+		# The array only has 0s and 1s as its entries
+		if not np.all(arr == 0):
+			assert np.all(np.unique(arr) == [0, 1])
+		# No player planes have entries in invalid squares
+		assert np.all(arr[cls._x_planes[0], ...] * arr[cls._i_plane, ...] == 0)
+		assert np.all(arr[cls._x_planes[1], ...] * arr[cls._i_plane, ...] == 0)
+		assert np.all(arr[cls._y_planes[0], ...] * arr[cls._i_plane, ...] == 0)
+		assert np.all(arr[cls._y_planes[1], ...] * arr[cls._i_plane, ...] == 0)
+
 
 	@abstractmethod
 	def to_flat_representation(self, state: np.array) -> np.array:
