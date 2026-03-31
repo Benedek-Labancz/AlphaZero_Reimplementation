@@ -33,7 +33,7 @@ def test_step_changes_board_and_switches_player(EnvClass):
 
 @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
 def test_simulate_step_does_not_mutate_state(EnvClass):
-	env = EnvClass()
+	env = EnvClass(override=True) # we need to override validation, as we create invalid states for the test
 	board_before = env.get_board_state().copy()
 	action = np.zeros(env.get_num_dimensions(), dtype=int)
 
@@ -45,7 +45,7 @@ def test_simulate_step_does_not_mutate_state(EnvClass):
 
 @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
 def test_full_board_is_terminal(EnvClass):
-	env = EnvClass()
+	env = EnvClass(override=True) # we need to override validation, as we create invalid states for the test
 	invalid = env.get_board_state()[env._i_plane, ...]
 	current = np.random.randint(2, size=env.get_num_dimensions() * (env.get_board_size(),))
 	current = current * (1 - invalid)
@@ -104,6 +104,35 @@ def test_step_state_representation(EnvClass):
 
 	# _c_plane changed
 	assert not np.array_equal(obs[env._c_plane], old_state[env._c_plane])
+
+
+@pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
+def test_action_mask_excludes_opponent_and_invalid(EnvClass):
+	env = EnvClass()
+	state = env._board_state.copy()
+	board_shape = env._num_dimensions * [env._board_size]
+
+	# Place current player's piece at index (0, 0, ...)
+	current_idx = tuple([0] * env._num_dimensions)
+	state[env._x_planes[0]][current_idx] = 1
+
+	# Place opponent's piece at index (1, 0, ...)
+	opponent_idx = tuple([1] + [0] * (env._num_dimensions - 1))
+	state[env._y_planes[0]][opponent_idx] = 1
+
+	# Mark a square as invalid at index (2, 0, ...)
+	invalid_idx = tuple([2] + [0] * (env._num_dimensions - 1))
+	state[env._i_plane][invalid_idx] = 1
+
+	mask = env.get_action_mask(state)
+
+	assert mask[current_idx] == False, "Current player's square should be masked out"
+	assert mask[opponent_idx] == False, "Opponent's square should be masked out"
+	assert mask[invalid_idx] == False, 'Invalid square should be masked out'
+
+	# A square untouched by any of the above should be available
+	free_idx = tuple([env._board_size - 1] * env._num_dimensions)
+	assert mask[free_idx] == True, 'Unoccupied valid square should be available'
 
 
 def _make_state(env, x_plane):
@@ -287,35 +316,6 @@ def test_three_dims_scoring():
 		)
 		== 0
 	)
-
-
-@pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
-def test_action_mask_excludes_opponent_and_invalid(EnvClass):
-	env = EnvClass()
-	state = env._board_state.copy()
-	board_shape = env._num_dimensions * [env._board_size]
-
-	# Place current player's piece at index (0, 0, ...)
-	current_idx = tuple([0] * env._num_dimensions)
-	state[env._x_planes[0]][current_idx] = 1
-
-	# Place opponent's piece at index (1, 0, ...)
-	opponent_idx = tuple([1] + [0] * (env._num_dimensions - 1))
-	state[env._y_planes[0]][opponent_idx] = 1
-
-	# Mark a square as invalid at index (2, 0, ...)
-	invalid_idx = tuple([2] + [0] * (env._num_dimensions - 1))
-	state[env._i_plane][invalid_idx] = 1
-
-	mask = env.get_action_mask(state)
-
-	assert mask[current_idx] == False, "Current player's square should be masked out"
-	assert mask[opponent_idx] == False, "Opponent's square should be masked out"
-	assert mask[invalid_idx] == False, 'Invalid square should be masked out'
-
-	# A square untouched by any of the above should be available
-	free_idx = tuple([env._board_size - 1] * env._num_dimensions)
-	assert mask[free_idx] == True, 'Unoccupied valid square should be available'
 
 
 def test_four_dims_scoring():
