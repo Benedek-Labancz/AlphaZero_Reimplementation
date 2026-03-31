@@ -1,8 +1,8 @@
 import numpy as np
 from typing import Optional
 from .base import BaseEnv
-from .render import print_score, print_board
 
+from src.ui.utils import clear_terminal
 
 class TwoDims(BaseEnv):
 	_num_dimensions = 2
@@ -44,6 +44,6 @@ class TwoDims(BaseEnv):
 		return np.concatenate((horizontals, verticals, diagonals), axis=0)
 
 	def render(self):
-		if self._render_mode in ['ansi']:
-			print_score(self._score)
-			print_board(self._board_state)
+		if self.render_mode == 'ansi':
+			clear_terminal()
+			print(self._board_state)

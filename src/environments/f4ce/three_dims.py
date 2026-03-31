@@ -2,7 +2,6 @@ from typing import Optional
 import numpy as np
 
 from .base import BaseEnv
-from .render import print_score, print_board
 
 
 class ThreeDims(BaseEnv):
@@ -105,8 +104,4 @@ class ThreeDims(BaseEnv):
 		return np.concatenate((columns, diagonals), axis=0)
 
 	def render(self):
-		if self._render_mode in ['ansi']:
-			print_score(self._score)
-			for i in range(self._board_state.shape[0]):
-				print()
-				print_board(self._board_state[i])
+		pass

@@ -1,7 +1,6 @@
 import numpy as np
 from typing import Optional
 from .base import BaseEnv
-from .render import print_score, print_board_3x3x3x3
 
 
 class FourDims(BaseEnv):
@@ -120,7 +119,4 @@ class FourDims(BaseEnv):
 		return np.concatenate(finals, axis=0)
 
 	def render(self):
-		if self._render_mode in ['ansi']:
-			# print_banner()
-			print_score(self._score)
-			print_board_3x3x3x3(self._board_state, self._last_action_to_render)
+		pass
