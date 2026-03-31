@@ -52,7 +52,7 @@ class Node:
 		# Several incoming edges exist in theory
 		self.in_edge = edge
 
-	def expand(self, priors: np.array):
+	def expand(self, priors: np.array=None):
 		"""
 		Compute valid actions,
 		Set priors,
@@ -62,6 +62,8 @@ class Node:
 			# If state is terminal, there's noting to expand
 			pass
 		else:
+			if priors is None:
+				priors=np.zeros(self.env.total_num_actions)
 			self.valid_actions = np.stack(self.action_mask.nonzero()).T
 			self.priors = priors[np.nonzero(self.action_mask.reshape(-1))]
 			self.out_edges = [
