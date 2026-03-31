@@ -6,7 +6,7 @@ from src.mcts.tree import Tree
 from src.mcts.search import run_mcts
 
 
-def play_episode(tree: Tree, 
+def self_play_episode(tree: Tree, 
                  policy,
                  num_simulations: int, 
                  c: float,
