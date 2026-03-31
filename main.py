@@ -2,26 +2,47 @@ from argparse import ArgumentParser
 import os
 import json
 import time
+import psutil
 
 import random
 import numpy as np
+from numpy.random import SeedSequence, default_rng
 import torch
 import torch.multiprocessing as mp
 from torch.optim import SGD
+from torch.optim.lr_scheduler import StepLR
 from collections import deque
 
 from src.mcts.tree import Tree, Node
-from src.training.self_play import play_episode
+from src.training.self_play import self_play_episode
 from src.environments.f4ce.two_dims import TwoDims
 from src.environments.f4ce.three_dims import ThreeDims
 from src.environments.f4ce.four_dims import FourDims
 from src.policy.network import PolicyScoreNetwork
 from src.training.train_policy import train_batch
-from src.training.evaluate import evaluate_policy
+from AlphaZero.src.training.play import play_episodes, select_az_action
 
 def seed_everything(seed: int):
-    # TODO
-    pass
+    random.seed(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def seed_worker(child_seed: SeedSequence):
+    """Call at the top of every worker function."""
+    seeds = child_seed.generate_state(3, dtype=np.uint64)
+
+    rng = default_rng(child_seed)          # numpy
+    torch.manual_seed(int(seeds[0]))       # torch CPU
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(int(seeds[0]))  # torch CUDA
+    random.seed(int(seeds[1]))             # Python random
+    # seeds[2] spare — e.g. for an environment's own RNG
+    return rng
 
 def save_checkpoint(policy, path: str, timestep: int):
     if not os.path.isdir(path):
@@ -34,22 +55,31 @@ def get_policy(state_dict, config):
     policy.load_state_dict(state_dict)
     return policy
 
-def self_play_worker(env, 
+def self_play_worker(child_seed,
+                     env, 
                      config, 
                      from_eval_conn, 
                      data_queue, 
-                     lock, 
-                     episode_counter, 
+                     lock,
+                     episode_counter,
+                     update_counter,
+                     episode_time,
                      initial_model_weights):
+    print(f"Self-play worker affinity: {psutil.Process().cpu_affinity()}")
+    rng = seed_worker(child_seed)
     policy = get_policy(initial_model_weights, config)
-    while episode_counter.value < config["global"]["num_games"]:
+    while update_counter.value < config["global"]["num_updates"]:
         new_best_weights_available = False
         while from_eval_conn.poll():
             model_weights = from_eval_conn.recv()
             new_best_weights_available = True
         if new_best_weights_available:
             policy.load_state_dict(model_weights)
-        data = play_episode(
+            print("New best policy loaded.")
+        b = time.time()
+        env.reset()
+        data = self_play_episode(
+            rng=rng,
             tree=Tree(root=Node(env=env, state=env.get_board_state())),
             policy=policy,
             num_simulations=config["self_play"]["num_simulations"],
@@ -58,17 +88,30 @@ def self_play_worker(env,
             early_selection_threshold=config["self_play"]["early_selection_threshold"]
         )
         data_queue.put(data)
+        e = time.time()
+        ep_time = e - b
         with lock:
             episode_counter.value += 1
+            episode_time.value += ep_time
+        with open(os.path.join(config["global"]["log_dir"], "self_play_worker.txt"), 'w') as f:
+            print(f'Number of games generated: {episode_counter.value}', file=f)
+            print(f'Average generation rate: {round(episode_time.value / episode_counter.value, 3)}s/game', file=f)
+            print(f'Last game took {round(ep_time, 3)}s to generate.', file=f)
+    data_queue.close()
+    data_queue.cancel_join_thread()
+    print('Data queue closed.')
 
 
-def train_policy_worker(config,
+def train_policy_worker(child_seed,
+                        config,
                         data_queue,
                         checkpoint_queue,
-                        episode_counter,
-                        update_counter,
                         lock,
+                        update_counter,
+                        update_time,
                         initial_model_weights):
+    print(f"Train-policy worker affinity: {psutil.Process().cpu_affinity()}")
+    rng = seed_worker(child_seed)
     policy = get_policy(initial_model_weights, config)
     optimizer = SGD(
         params=policy.parameters(), 
@@ -76,10 +119,19 @@ def train_policy_worker(config,
         momentum=config["training"]["momentum"],
         weight_decay=config["training"]["weight_decay"]
         )
+    scheduler = StepLR(
+        optimizer=optimizer,
+        step_size=config["training"]["lr_annealing_step_size"],
+        gamma=config["training"]["lr_annealing"]
+    )
     data_buffer = deque(maxlen=config["training"]["buffer_size"])
-    while episode_counter.value < config["global"]["num_games"]:
-        while not data_queue.empty():
-            data_buffer.append(data_queue.get())
+    while update_counter.value < config["global"]["num_updates"]:
+        try:
+            while not data_queue.empty():
+                data_buffer.append(data_queue.get())
+        except ValueError:
+            print("Data Queue has been closed. Aborting Training.")
+            break
         if len(data_buffer) < config["training"]["batch_size"]:
             continue
         b = time.time()
@@ -93,16 +145,27 @@ def train_policy_worker(config,
             states.append(s)
             pi_values.append(pi)
             winners.append(z)
+        states = np.vstack(np.array(states))
+        pi_values = np.vstack(np.array(pi_values))
+        winners = np.array(winners).reshape(-1)
         batch_loss = train_batch(
             data=(states, pi_values, winners),
             policy=policy,
-            optimizer=optimizer
+            optimizer=optimizer,
+            scheduler=scheduler
         )
         e = time.time()
+        up_time = e - b
         # TODO: log loss to wandb
-        print(f"Timestep: {update_counter.value}\t-\tLoss: {batch_loss}\t-\tTime taken: {round(e - b, 3)}s")
         with lock:
             update_counter.value += 1
+            update_time.value += up_time
+        with open(os.path.join(config["global"]["log_dir"], "train_policy_worker.txt"), 'w') as f:
+            print(f'Number of policy updates: {update_counter.value}', file=f)
+            print(f'Average update rate: {round(update_time.value / update_counter.value, 3)}s/batch', file=f)
+            print(f'Last update took {round(up_time, 3)}s.', file=f)
+            print(f'Average checkpoint rate: {round((update_time.value / update_counter.value) * config["training"]["checkpoint_frequency"], 3)}s/checkpoint', file=f)
+            print(f'Batch size: {config["training"]["batch_size"]}', file=f)
         if update_counter.value % config["training"]["checkpoint_frequency"] == 0:
             checkpoint_queue.put(policy.state_dict())
             save_checkpoint(
@@ -110,36 +173,81 @@ def train_policy_worker(config,
                 path=config["training"]["save_path"],
                 timestep=update_counter.value
             )
+    checkpoint_queue.close()
+    checkpoint_queue.cancel_join_thread()
+    print('Checkpoint queue closed.')
 
-def eval_worker(env,
+def eval_worker(child_seed,
+                env,
                 config,
                 checkpoint_queue,
                 to_self_play_conn,
-                episode_counter,
+                lock,
+                eval_counter,
+                update_counter,
+                promotion_counter,
+                eval_time,
                 initial_model_weights):
+    print(f"Eval worker affinity: {psutil.Process().cpu_affinity()}")
+    rng = seed_worker(child_seed)
     best_policy = get_policy(initial_model_weights, config)
-    while episode_counter.value < config["global"]["num_games"]:
+    while update_counter.value < config["global"]["num_updates"]:
         if checkpoint_queue.empty():
             continue
-        candidate_weights = checkpoint_queue.get()
+        try:
+            candidate_weights = checkpoint_queue.get()
+        except ValueError as e:
+            print("Checkpoint Queue has been closed. Aborting Evaluation.")
+            break
+        b = time.time()
         candidate_policy = get_policy(candidate_weights, config)
-        win_rate = evaluate_policy(
+        num_wins = play_episodes(
+            rng=rng,
             env=env,
             best_policy=best_policy,
             candidate_policy=candidate_policy,
+            best_select_action_fn=select_az_action,
+            candidate_select_action_fn=select_az_action,
             num_games=config["eval"]["num_games"],
             num_simulations=config["eval"]["num_simulations"],
             c=config["eval"]["c"]
         )
+        print(num_wins)
+        win_rate = num_wins[1] / config["eval"]["num_games"]
         if win_rate > config["eval"]["win_rate_margin"]:
             new_best_weights = candidate_policy.state_dict()
             to_self_play_conn.send(new_best_weights)
             best_policy.load_state_dict(new_best_weights)
             print(f'New Best Model!\t-\tWin Rate: {round(win_rate, 3)}')
+            with lock:
+                promotion_counter.value += 1
+        e = time.time()
+        ev_time = e - b
+        with lock:
+            eval_counter.value += 1
+            eval_time.value += ev_time
+        with open(os.path.join(config["global"]["log_dir"], "eval_worker.txt"), 'w') as f:
+            print(f'Number of evaluations: {eval_counter.value}', file=f)
+            print(f'Average eval rate: {round(eval_time.value / eval_counter.value, 3)}s/eval ({config["eval"]["num_games"]} games each)', file=f)
+            print(f'Last evaluation took {round(ev_time, 3)}s.', file=f)
+            print(f'Win rate {round(win_rate, 3)}', file=f)
+            print(f'Promotion rate: {round((promotion_counter.value / eval_counter.value), 3)}', file=f)
+    checkpoint_queue.close()
+    checkpoint_queue.cancel_join_thread()
+    print('Checkpoint queue closed.')
 
+
+def minimax_worker():
+    pass
 
 if __name__ == '__main__':
-    seed_everything(42) # TODO
+    GLOBAL_SEED = 42
+    NUM_WORKERS = 3
+    seed_everything(GLOBAL_SEED)
+    ss = SeedSequence(GLOBAL_SEED)
+    child_seeds = ss.spawn(NUM_WORKERS)
+
+
     parser = ArgumentParser()
     parser.add_argument("--config_path", type=str, required=True)
     args = parser.parse_args()
@@ -153,6 +261,11 @@ if __name__ == '__main__':
     lock = mp.Lock()
     episode_counter = mp.Value('i', 0)
     update_counter = mp.Value('i', 0)
+    eval_counter = mp.Value('i', 0)
+    promotion_counter = mp.Value('i', 0)
+    episode_time = mp.Value('f', 0)
+    update_time = mp.Value('f', 0)
+    eval_time = mp.Value('f', 0)
     
     data_queue = mp.Queue()
     checkpoint_queue = mp.Queue()
@@ -162,41 +275,56 @@ if __name__ == '__main__':
     self_play_w = mp.Process(
         target=self_play_worker,
         args=(
+            child_seeds[0],
             env,
             config,
             from_eval_conn,
             data_queue,
             lock,
             episode_counter,
+            update_counter,
+            episode_time,
             initial_model_weights
         )
     )
+    self_play_w.start()
+    # psutil.Process(self_play_w.pid).cpu_affinity([0, 1, 2])
 
     train_policy_w = mp.Process(
         target=train_policy_worker,
         args=(
+            child_seeds[1],
             config,
             data_queue,
             checkpoint_queue,
-            episode_counter,
-            update_counter,
             lock,
+            update_counter,
+            update_time,
             initial_model_weights
         )
     )
+    train_policy_w.start()
+    psutil.Process(train_policy_w.pid).cpu_affinity([3, 4, 5])
+
 
     eval_w = mp.Process(
         target=eval_worker,
         args=(
+            child_seeds[2],
             env,
             config,
             checkpoint_queue,
             to_self_play_conn,
-            episode_counter,
+            lock,
+            eval_counter,
+            update_counter,
+            promotion_counter,
+            eval_time,
             initial_model_weights
         )
     )
+    eval_w.start()
+    # psutil.Process(eval_w.pid).cpu_affinity([6, 7, 8])
 
-    self_play_w.start()
-    # train_policy_w.start()
-    # eval_w.start()
+
+    print("Workers started.")
