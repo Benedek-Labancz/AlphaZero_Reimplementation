@@ -6,6 +6,7 @@ sys.path.insert(0, str(project_root))
 
 import pytest
 import numpy as np
+from numpy.random import default_rng
 
 from src.mcts.tree import Tree, Node
 from src.training.self_play import self_play_episode
@@ -14,6 +15,9 @@ from src.environments.f4ce.three_dims import ThreeDims
 from src.environments.f4ce.four_dims import FourDims
 from src.policy.network import PolicyScoreNetwork
 from AlphaZero.src.training.play import play_episodes, select_az_action
+
+GLOBAL_SEED = 42
+rng = default_rng(GLOBAL_SEED)
 
 @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
 def test_play_episodes(EnvClass):
@@ -30,6 +34,7 @@ def test_play_episodes(EnvClass):
     num_simulations = 20
     num_games = 2
     num_wins = play_episodes(
+        rng=rng,
         env=env,
         best_policy=best_net,
         candidate_policy=candidate_net,

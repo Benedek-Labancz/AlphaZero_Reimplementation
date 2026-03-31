@@ -6,6 +6,7 @@ sys.path.insert(0, str(project_root))
 
 import pytest
 import numpy as np
+from numpy.random import default_rng
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
 
@@ -16,6 +17,10 @@ from src.environments.f4ce.three_dims import ThreeDims
 from src.environments.f4ce.four_dims import FourDims
 from src.policy.network import PolicyScoreNetwork
 from src.training.train_policy import train_batch
+
+GLOBAL_SEED = 42
+rng = default_rng(GLOBAL_SEED)
+
 
 @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
 def test_train_batch(EnvClass):
@@ -29,6 +34,7 @@ def test_train_batch(EnvClass):
                                     in_channels=6)
     num_simulations = 20
     data = self_play_episode(
+        rng=rng,
         tree=tree,
         policy=policy_net,
         num_simulations=num_simulations,

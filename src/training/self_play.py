@@ -6,7 +6,8 @@ from src.mcts.tree import Tree
 from src.mcts.search import run_mcts
 
 
-def self_play_episode(tree: Tree, 
+def self_play_episode(rng,
+                      tree: Tree, 
                  policy,
                  num_simulations: int, 
                  c: float,
@@ -40,7 +41,7 @@ def self_play_episode(tree: Tree,
         ep_pi_values.append(padded_pi_values)
         # Early in the game, we use pi values to select actions
         if move_count < early_selection_threshold:
-            selected_edge = np.random.choice(current.out_edges, p=pi_values)
+            selected_edge = rng.choice(current.out_edges, p=pi_values)
         else:
             # Later on we select greedily, i.e. tau -> 0
             selected_edge_idx = np.argmax(pi_values)

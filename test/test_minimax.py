@@ -6,6 +6,7 @@ sys.path.insert(0, str(project_root))
 
 import pytest
 import numpy as np
+from numpy.random import default_rng
 
 from src.mcts.tree import Tree, Node
 from src.training.self_play import self_play_episode
@@ -16,27 +17,31 @@ from src.policy.network import PolicyScoreNetwork
 from AlphaZero.src.training.play import play_episodes, select_az_action
 from src.evaluation.minimax import select_minimax_action
 
-# @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
-# def test_minimax_runs(EnvClass):
-#     env = EnvClass(render_mode="ansi")
-#     num_squares = env.get_board_size() ** env.get_num_dimensions()
-#     candidate_net = PolicyScoreNetwork(num_res_blocks=1, 
-#                                     input_size=num_squares, 
-#                                     output_size=num_squares, 
-#                                     in_channels=6)
-#     num_simulations = 20
-#     num_games = 1
-#     num_wins = play_episodes(
-#         env=env,
-#         best_policy=None,
-#         candidate_policy=candidate_net,
-#         best_select_action_fn=select_minimax_action,
-#         candidate_select_action_fn=select_az_action,
-#         num_games=num_games,
-#         num_simulations=num_simulations,
-#         c=0.5,
-#         max_depth=(6 - env.get_num_dimensions())
-#     )
+GLOBAL_SEED = 42
+rng = default_rng(GLOBAL_SEED)
+
+@pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
+def test_minimax_runs(EnvClass):
+    env = EnvClass(render_mode="ansi")
+    num_squares = env.get_board_size() ** env.get_num_dimensions()
+    candidate_net = PolicyScoreNetwork(num_res_blocks=1, 
+                                    input_size=num_squares, 
+                                    output_size=num_squares, 
+                                    in_channels=6)
+    num_simulations = 20
+    num_games = 1
+    num_wins = play_episodes(
+        rng=rng,
+        env=env,
+        best_policy=None,
+        candidate_policy=candidate_net,
+        best_select_action_fn=select_minimax_action,
+        candidate_select_action_fn=select_az_action,
+        num_games=num_games,
+        num_simulations=num_simulations,
+        c=0.5,
+        max_depth=(6 - env.get_num_dimensions())
+    )
 
 
 def _make_state(env, x_plane):
