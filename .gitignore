@@ -17,3 +17,6 @@ logs/
 agent_docs/
 models/
 data/
+checkpoints/
+configs/
+wandb/
