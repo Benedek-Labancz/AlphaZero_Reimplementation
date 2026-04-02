@@ -37,15 +37,13 @@ def seed_everything(seed: int):
     torch.backends.cudnn.benchmark = False
 
 def seed_worker(child_seed: SeedSequence):
-    """Call at the top of every worker function."""
     seeds = child_seed.generate_state(3, dtype=np.uint64)
 
-    rng = default_rng(child_seed)          # numpy
-    torch.manual_seed(int(seeds[0]))       # torch CPU
+    rng = default_rng(child_seed)
+    torch.manual_seed(int(seeds[0]))
     if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(int(seeds[0]))  # torch CUDA
-    random.seed(int(seeds[1]))             # Python random
-    # seeds[2] spare — e.g. for an environment's own RNG
+        torch.cuda.manual_seed_all(int(seeds[0]))
+    random.seed(int(seeds[1]))
     return rng
 
 def save_checkpoint(policy, path: str, timestep: int):
