@@ -48,6 +48,7 @@ class BaseEnv(gym.Env, ABC):
 		self._initial_state = self._get_initial_board()
 		self._board_state = self._initial_state.copy()
 		self._scoring_cases = self._get_scoring_cases()
+		self._board_transformations = self._get_board_transformations()
 
 		self._last_action_to_render = None
 
@@ -216,6 +217,64 @@ class BaseEnv(gym.Env, ABC):
 		assert np.all(arr[cls._y_planes[1], ...] * arr[cls._i_plane, ...] == 0)
 
 
+	def _transform_board(self, 
+					  board: np.array,
+					  rotation_axes: tuple[int], 
+					  num_rotations: int, 
+					  flip: bool,
+					  flip_axis: int=None):
+		if flip:
+			board = np.flip(board, axis=flip_axis)
+		board = np.rot90(board, k=num_rotations, axes=rotation_axes)
+		return board
+	
+	def get_random_transformed_state(self, rng, state: np.array):
+		transformation = self._board_transformations[rng.integers(len(self._board_transformations))]
+		# transform each plane of the board
+		transformed_state = state.copy()
+		for plane_id in range(self._num_planes):
+			transformed_state[plane_id, ...] = self._transform_board(
+					board=state[plane_id, ...], **transformation
+				)
+		self._validate(transformed_state)
+		return transformed_state, transformation
+	
+	def get_original_action_probs_from_transformed(self, transformed_action_probs: np.array, transformation: dict):
+		'''
+		Work out how to invert the transformation and do it on the action probs.
+		This is useful for getting back the true priors in the search process,
+		while a transformed state was passed to the network for evaluation.
+		'''
+		transformed_action_probs = transformed_action_probs.reshape(self._num_dimensions * (self._board_size,))
+		inverse_rotation = {
+						"rotation_axes": transformation["rotation_axes"],
+						"num_rotations": 4 - transformation["num_rotations"],
+						"flip": False,
+						"flip_axis": transformation["flip_axis"]
+					}
+		inverse_flip = {
+						"rotation_axes": transformation["rotation_axes"],
+						"num_rotations": 0,
+						"flip": transformation["flip"],
+						"flip_axis": transformation["flip_axis"]
+					}
+		# Reverse the transformation
+		action_probs = self._transform_board(
+			board=transformed_action_probs,
+			**inverse_rotation
+		)
+		action_probs = self._transform_board(
+			board=action_probs,
+			**inverse_flip
+		)
+		# Flatten out so that they can be used as priors
+		action_probs = action_probs.reshape(-1)
+		return action_probs
+
+	@abstractmethod
+	def _get_board_transformations(self) -> list[np.array]:
+		return
+	
 	@abstractmethod
 	def to_flat_representation(self, state: np.array) -> np.array:
 		"""

@@ -1,10 +1,11 @@
 import torch
+from torch.nn.functional import softmax
 import numpy as np
 from typing import Any
 
 from .tree import Tree
 
-def run_simulation(tree: Tree, policy: Any, c: float) -> Tree:
+def run_simulation(rng, tree: Tree, policy: Any, c: float) -> Tree:
     current = tree.root
     while not current.is_leaf():
         # Select the edge that maximises Q(s, a) + U(s, a)
@@ -23,20 +24,34 @@ def run_simulation(tree: Tree, policy: Any, c: float) -> Tree:
         # we use the true value instead of the network estimate for backup
         v = current.env.get_winner(current.state)
     else:
-        # TODO: add dihedral reflection or rotation
-        flat_representation = current.env.to_flat_representation(current.state)
-        # TODO: if running multiple instances of MCTS, add state to queue and evaluate in batches
-        action_probs, v = policy(torch.as_tensor(flat_representation, dtype=torch.float32))
-        action_probs = action_probs.squeeze()
-        v = v.squeeze()
-        current.expand(priors=action_probs)
+        with torch.no_grad():
+            # Add rotation and flipping in a random manner
+            transformed_state, transformation = current.env.get_random_transformed_state(rng=rng, state=current.state)
+            flat_representation = current.env.to_flat_representation(transformed_state)
+            # TODO: if running multiple instances of MCTS, add state to queue and evaluate in batches
+            transformed_action_logits, v = policy(torch.as_tensor(flat_representation, dtype=torch.float32))
+            transformed_action_logits = transformed_action_logits.squeeze()
+            # turn logits into probabilities
+            transformed_action_probs = softmax(transformed_action_logits, dim=0)
+            # perform the inverse transformation on the action probs so that the predictions are lined up with the actual state
+            action_probs = current.env.get_original_action_probs_from_transformed(transformed_action_probs, transformation)
+            assert np.array_equal(
+                current.env._transform_board(
+                action_probs.reshape(current.env.get_num_dimensions() * (current.env.get_board_size(),)), 
+                **transformation
+                ).reshape(-1),
+                transformed_action_probs
+            )
+            v = v.squeeze()
+            current.expand(priors=action_probs)
     while current != tree.root:
         v = -v # Player perspectives are flipped at each level
         current.in_edge.update(v)
         current = current.in_edge.frm
     return tree
 
-def run_mcts(tree: Tree, 
+def run_mcts(rng,
+             tree: Tree, 
              policy: Any, 
              num_simulations: int, 
              c: float, 
@@ -47,7 +62,7 @@ def run_mcts(tree: Tree,
     """
     n = 0
     while n < num_simulations:
-        run_simulation(tree=tree, policy=policy, c=c)
+        run_simulation(rng=rng, tree=tree, policy=policy, c=c)
         n += 1
     pi_values = tree.root.get_pi_values(tau=tau)
     return tree, pi_values

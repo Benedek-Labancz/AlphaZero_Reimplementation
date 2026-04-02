@@ -16,6 +16,15 @@ class ThreeDims(BaseEnv):
 	def to_flat_representation(self, state: np.array) -> np.array:
 		return state.reshape(self._num_planes, self._board_size, -1)
 
+	def _get_board_transformations(self) -> list[dict]:
+		# TODO: Dummy transformations for now
+		return [{
+						"rotation_axes": (0, 1),
+						"num_rotations": 0,
+						"flip": False,
+						"flip_axis": 0
+					}]
+
 	def _get_scoring_cases(self) -> np.array:
 		"""
 		Compute coordinate triplets.

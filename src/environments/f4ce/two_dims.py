@@ -16,6 +16,20 @@ class TwoDims(BaseEnv):
 	def to_flat_representation(self, state: np.array) -> np.array:
 		return state
 
+	def _get_board_transformations(self) -> list[dict]:
+		tr = []
+		for n in [0, 1, 2, 3]:
+			for f in [False, True]:
+				tr.append(
+					{
+						"rotation_axes": (0, 1),
+						"num_rotations": n,
+						"flip": f,
+						"flip_axis": 0
+					}
+				)
+		return tr
+	
 	def _get_scoring_cases(self) -> np.array:
 		"""
 		Compute all the N cases of coordinate triplets
@@ -44,6 +58,6 @@ class TwoDims(BaseEnv):
 		return np.concatenate((horizontals, verticals, diagonals), axis=0)
 
 	def render(self):
-		if self.render_mode == 'ansi':
-			clear_terminal()
+		if self._render_mode == 'ansi':
+			# clear_terminal()
 			print(self._board_state)

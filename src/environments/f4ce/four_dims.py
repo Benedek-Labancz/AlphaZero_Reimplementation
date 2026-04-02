@@ -22,6 +22,15 @@ class FourDims(BaseEnv):
 		board[self._i_plane, *([middle_idx] * self._num_dimensions)] = 1
 		return board
 
+	def _get_board_transformations(self) -> list[dict]:
+		# TODO: Dummy transformations for now
+		return [{
+						"rotation_axes": (0, 1),
+						"num_rotations": 0,
+						"flip": False,
+						"flip_axis": 0
+					}]
+
 	def _get_scoring_cases(self) -> np.array:
 		"""
 		Compute scoring cases, shape (N, 3, 4)
