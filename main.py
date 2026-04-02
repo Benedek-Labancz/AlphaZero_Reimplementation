@@ -24,6 +24,8 @@ from src.policy.network import PolicyScoreNetwork
 from src.training.train_policy import train_batch
 from src.training.play import play_episodes, select_az_action
 from src.training.utils import batch_entropy
+from src.evaluation.minimax import select_minimax_action
+from src.evaluation.random import select_random_action
 
 def seed_everything(seed: int):
     random.seed(seed)
@@ -33,7 +35,6 @@ def seed_everything(seed: int):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-
 
 def seed_worker(child_seed: SeedSequence):
     """Call at the top of every worker function."""
@@ -93,7 +94,6 @@ def self_play_worker(child_seed,
         )
         data_queue.put(data)
         wandb_run.log({'pi_entropy': np.mean(batch_entropy(data[1]))})
-        if episode_counter.value % 150 == 0: print(episode_counter.value, data[1])
         e = time.time()
         ep_time = e - b
         with lock:
@@ -115,11 +115,14 @@ def train_policy_worker(child_seed,
                         lock,
                         episode_counter,
                         update_counter,
+                        eval_counter,
                         update_time,
                         initial_model_weights):
+    
     print(f"Train-policy worker affinity: {psutil.Process().cpu_affinity()}")
     rng = seed_worker(child_seed)
     policy = get_policy(initial_model_weights, config)
+
     optimizer = SGD(
         params=policy.parameters(), 
         lr=config["training"]["lr"], 
@@ -132,9 +135,17 @@ def train_policy_worker(child_seed,
         gamma=config["training"]["lr_annealing"]
     )
     data_buffer = deque(maxlen=config["training"]["buffer_size"])
+
     while update_counter.value < config["global"]["num_updates"]:
-        while episode_counter.value < update_counter.value * config["training"]["batch_size"] * (1/3):
-            continue
+        # Control the rate of policy updates on several levels
+        # Wait for self-play episode / policy update ratio
+        if update_counter.value > 0:
+            while (episode_counter.value / update_counter.value) < config["training"]["episodes_per_update"]:
+                continue
+        # Wait for evaluation of the last checkpoint
+        if update_counter.value >= config["training"]["checkpoint_frequency"]:
+            while (eval_counter.value / (update_counter.value // config["training"]["checkpoint_frequency"])) != 1:
+                continue
         try:
             while not data_queue.empty():
                 data_buffer.append(data_queue.get())
@@ -143,6 +154,7 @@ def train_policy_worker(child_seed,
             break
         if len(data_buffer) < config["training"]["batch_size"]:
             continue
+
         b = time.time()
         # Sample and batch data
         samples = random.sample(data_buffer, k=config["training"]["batch_size"])
@@ -166,7 +178,6 @@ def train_policy_worker(child_seed,
         wandb_run.log({"loss": batch_loss})
         e = time.time()
         up_time = e - b
-        # TODO: log loss to wandb
         with lock:
             update_counter.value += 1
             update_time.value += up_time
@@ -224,10 +235,10 @@ def eval_worker(child_seed,
                 num_simulations=config["eval"]["num_simulations"],
                 c=config["eval"]["c"]
             )
-        print(num_wins)
         win_rate = num_wins[1] / config["eval"]["num_games"]
-        wandb_run.log({'win_rate': win_rate})
-        if win_rate > config["eval"]["win_rate_margin"]:
+        wandb_run.log({'num_losses_vs_best': num_wins[0]})
+        wandb_run.log({'num_wins_vs_best': num_wins[1]})
+        if num_wins[0] < num_wins[1] or num_wins == [0, 0]:
             new_best_weights = candidate_policy.state_dict()
             to_self_play_conn.send(new_best_weights)
             best_policy.load_state_dict(new_best_weights)
@@ -239,6 +250,36 @@ def eval_worker(child_seed,
             print(f'New Best Model!\t-\tWin Rate: {round(win_rate, 3)}')
             with lock:
                 promotion_counter.value += 1
+            # Evaluate against minimax
+            with lock:
+                num_wins_m = play_episodes(
+                    rng=rng,
+                    env=env,
+                    best_policy=best_policy,
+                    candidate_policy=None,
+                    best_select_action_fn=select_az_action,
+                    candidate_select_action_fn=select_minimax_action,
+                    num_games=config["eval"]["num_games"],
+                    num_simulations=config["eval"]["num_simulations"],
+                    c=config["eval"]["c"],
+                    max_depth=config["eval"]["minimax_max_depth"],
+                    epsilon=config["eval"]["minimax_epsilon"]
+                )
+                wandb_run.log({f'num_losses_vs_minimax-{config["eval"]["minimax_max_depth"]}': num_wins_m[0]})
+                wandb_run.log({f'num_wins_vs_minimax-{config["eval"]["minimax_max_depth"]}': num_wins_m[1]})
+                num_wins_r = play_episodes(
+                    rng=rng,
+                    env=env,
+                    best_policy=best_policy,
+                    candidate_policy=None,
+                    best_select_action_fn=select_az_action,
+                    candidate_select_action_fn=select_random_action,
+                    num_games=config["eval"]["num_games"],
+                    num_simulations=config["eval"]["num_simulations"],
+                    c=config["eval"]["c"],
+                )
+                wandb_run.log({'num_losses_vs_random': num_wins_r[0]})
+                wandb_run.log({'num_wins_vs_random': num_wins_r[1]})
         e = time.time()
         ev_time = e - b
         with lock:
@@ -254,9 +295,6 @@ def eval_worker(child_seed,
     checkpoint_queue.cancel_join_thread()
     print('Checkpoint queue closed.')
 
-
-def minimax_worker():
-    pass
 
 if __name__ == '__main__':
     GLOBAL_SEED = 42
@@ -274,11 +312,8 @@ if __name__ == '__main__':
 
 
     wandb_run = wandb.init(
-        # Set the wandb entity where your project will be logged (generally your team name).
-        entity="blabancz-university-of-edinburgh",
-        # Set the wandb project where this run will be logged.
-        project="my-awesome-project",
-        # Track hyperparameters and run metadata.
+        entity=config["logging"]["entity_name"],
+        project=config["logging"]["project_name"],
         config=config,
     )
 
@@ -317,7 +352,6 @@ if __name__ == '__main__':
         )
     )
     self_play_w.start()
-    # psutil.Process(self_play_w.pid).cpu_affinity([0, 1, 2])
 
     train_policy_w = mp.Process(
         target=train_policy_worker,
@@ -330,12 +364,12 @@ if __name__ == '__main__':
             lock,
             episode_counter,
             update_counter,
+            eval_counter,
             update_time,
             initial_model_weights
         )
     )
     train_policy_w.start()
-    psutil.Process(train_policy_w.pid).cpu_affinity([3, 4, 5])
 
 
     eval_w = mp.Process(
@@ -356,9 +390,6 @@ if __name__ == '__main__':
         )
     )
     eval_w.start()
-    # psutil.Process(eval_w.pid).cpu_affinity([6, 7, 8])
-
-
     
     self_play_w.join()
     train_policy_w.join()
