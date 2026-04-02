@@ -3,12 +3,12 @@ import numpy as np
 from src.mcts.tree import Tree, Node
 
 
-def select_minimax_action(tree: Tree, max_depth: int, epsilon: float=0, **kwargs):
+def select_minimax_action(rng, tree: Tree, max_depth: int, epsilon: float=0, **kwargs):
     if tree.root.is_leaf():
         tree.root.expand()
-    if np.random.rand() < epsilon:
+    if rng.random() < epsilon:
         num_valid_actions = len(tree.root.valid_actions)
-        return tree.root.valid_actions[np.random.randint(num_valid_actions)]
+        return tree.root.valid_actions[rng.randint(num_valid_actions)]
     else:
         alpha = -np.inf
         beta = np.inf
@@ -17,7 +17,7 @@ def select_minimax_action(tree: Tree, max_depth: int, epsilon: float=0, **kwargs
             if edge.n == 0:
                     edge.add_destination_node(tree=tree)
             minimax_v = get_minimax_value(
-                tree=Tree(root=edge.to),
+                tree=Tree(root=edge.to, nodes=tree.nodes.copy()),
                 max_depth=max_depth,
                 depth=1,
                 alpha=alpha,
@@ -39,7 +39,7 @@ def get_minimax_value(tree: Tree, max_depth: int, depth: int, alpha: int, beta: 
         if edge.n == 0:
             edge.add_destination_node(tree=tree)
         minimax_v = get_minimax_value(
-            tree=Tree(root=edge.to),
+            tree=Tree(root=edge.to, nodes=tree.nodes.copy()),
             max_depth=max_depth,
             depth=depth+1,
             alpha=alpha,

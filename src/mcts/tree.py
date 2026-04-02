@@ -1,10 +1,9 @@
 import numpy as np
 
 class Tree:
-	def __init__(self, root):
+	def __init__(self, root, nodes=None):
 		self.root = root
-		self.nodes = []
-		self.build_tree_from_root()
+		self.nodes = [] if nodes is None else nodes
 
 	def get_node_of_state(self, state: np.array):
 		for node in self.nodes:
@@ -16,19 +15,9 @@ class Tree:
 		# WARN: this implementation expects no duplicates are added; we do not enforce this
 		self.nodes.append(node)
 
-	def build_tree_from_root(self):
-		""" Traverse the tree using BFS and add nodes
-		to self.nodes"""
-		queue = [self.root]
-		while len(queue) > 0:
-			current = queue.pop()
-			if self.get_node_of_state(current) is None:
-				self.add_node(current)
-			if not current.is_leaf():
-				for edge in current.out_edges:
-					# Only has destination node if it has been traversed at least once
-					if edge.n > 0:
-						queue.insert(0, edge.to)
+	def switch_root(self, node):
+		self.root = node
+		return self
 		
 
 class Node:

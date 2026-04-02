@@ -26,8 +26,9 @@ def self_play_episode(rng,
         if current.priors is not None: # At the very beginning of the game, we have no priors
             # Sample Dirichlet noise and add it to root priors
             dir_dist = Dirichlet(torch.tensor(len(current.priors) * [noise_concentration]))
-            current.priors = (1 - epsilon) * current.priors + epsilon * dir_dist.sample()
+            current.priors = (1 - epsilon) * current.priors + epsilon * dir_dist.sample().numpy()
         tree, pi_values = run_mcts(
+            rng=rng,
             tree=tree,
             policy=policy,
             num_simulations=num_simulations,
@@ -50,7 +51,7 @@ def self_play_episode(rng,
             selected_edge.add_destination_node(tree=tree)
         # Set new node as root, discard the rest of the tree
         current = selected_edge.to
-        tree = Tree(root=current)
+        tree = tree.switch_root(node=current)
         move_count += 1
     # Get the actual winner, and back up the values for supervised learning examples
     # The sign alternates as player roles alternate

@@ -55,17 +55,17 @@ def test_two_dims_responses():
     env = TwoDims(override=True)
 
     state = _make_state(env, np.array([[1, 1, 0], [0, 0, 0], [0, 0, 0]]))
-    action = select_minimax_action(Tree(root=Node(env, state)), max_depth=3)
+    action = select_minimax_action(rng, Tree(root=Node(env, state)), max_depth=3)
     assert np.all(action == [0, 2])
 
     state = _make_state(env, np.array([[1, 0, 0], [0, 0, 0], [0, 0, 0]]))
-    action = select_minimax_action(Tree(root=Node(env, state)), max_depth=3)
+    action = select_minimax_action(rng, Tree(root=Node(env, state)), max_depth=3)
     assert np.all(action == [0, 1])
 
     state = _make_state(env, np.array([[1, 1, 0], [1, 1, 0], [0, 0, 0]]))
-    action = select_minimax_action(Tree(root=Node(env, state)), max_depth=3)
+    action = select_minimax_action(rng, Tree(root=Node(env, state)), max_depth=3)
     assert np.all(action == [0, 2])
 
     state = _make_state(env, np.array([[0, 0, 0], [0, 0, 0], [0, 0, 0]]))
-    action = select_minimax_action(Tree(root=Node(env, state)), max_depth=6)
+    action = select_minimax_action(rng, Tree(root=Node(env, state)), max_depth=6)
     assert np.all(action == [0, 0])

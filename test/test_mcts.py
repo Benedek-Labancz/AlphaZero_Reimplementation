@@ -6,6 +6,7 @@ sys.path.insert(0, str(project_root))
 
 import pytest
 import numpy as np
+from numpy.random import default_rng
 
 from src.mcts.tree import Tree, Node
 from src.mcts.search import run_simulation, run_mcts
@@ -14,6 +15,8 @@ from src.environments.f4ce.three_dims import ThreeDims
 from src.environments.f4ce.four_dims import FourDims
 from src.policy.network import PolicyScoreNetwork
 
+GLOBAL_SEED = 42
+rng = default_rng(GLOBAL_SEED)
 
 
 @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
@@ -27,6 +30,7 @@ def test_simulation(EnvClass):
                                     output_size=num_squares, 
                                     in_channels=6)
     new_tree = run_simulation(
+        rng=rng,
         tree=tree,
         policy=policy_net,
         c=0.5
@@ -46,6 +50,7 @@ def test_mcts(EnvClass):
                                     in_channels=6)
     num_simulations = 200
     tree, pi = run_mcts(
+        rng=rng,
         tree=tree,
         policy=policy_net,
         num_simulations=num_simulations,
