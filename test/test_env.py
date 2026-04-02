@@ -11,9 +11,9 @@ from src.environments.f4ce.three_dims import ThreeDims
 from src.environments.f4ce.four_dims import FourDims
 
 
-env2 = TwoDims()
-env3 = ThreeDims()
-env4 = FourDims()
+env2 = TwoDims(override=True) # we need to override validation, as we create invalid states for the test
+env3 = ThreeDims(override=True)
+env4 = FourDims(override=True)
 
 
 @pytest.mark.parametrize('EnvClass', [TwoDims, ThreeDims, FourDims])
@@ -141,371 +141,384 @@ def _make_state(env, x_plane):
 	state[env._x_planes[0]] = x_plane
 	return state
 
+def _apply_transformation(env, state, transformation):
+	transformed_state = state.copy()
+	for plane_id in range(env._num_planes):
+			transformed_state[plane_id, ...] = env._transform_board(
+					board=state[plane_id, ...], **transformation
+				)
+	env._validate(transformed_state)
+	return transformed_state
+	
+
 
 def test_two_dims_scoring():
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[1, 1, 1], [0, 0, 0], [0, 0, 0]]))
+	for transform in env2._board_transformations:
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[1, 1, 1], [0, 0, 0], [0, 0, 0]])), transform)
+			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[1, 0, 0], [1, 0, 0], [1, 0, 0]]))
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[1, 0, 0], [1, 0, 0], [1, 0, 0]])), transform)
+			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]]))
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])), transform)
+			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]]))
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[0, 0, 1], [0, 1, 0], [1, 0, 0]])), transform)
+			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[1, 1, 1], [0, 1, 0], [0, 0, 1]]))
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[1, 1, 1], [0, 1, 0], [0, 0, 1]])), transform)
+			)
+			== 2
 		)
-		== 2
-	)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[1, 1, 1], [0, 1, 0], [1, 0, 1]]))
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[1, 1, 1], [0, 1, 0], [1, 0, 1]])), transform)
+			)
+			== 3
 		)
-		== 3
-	)
-	# q pieces at (0,0),(1,0),(1,1),(2,2); p pieces at (0,1),(0,2),(1,2)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[0, 1, 1], [0, 0, 1], [0, 0, 0]]))
+		# q pieces at (0,0),(1,0),(1,1),(2,2); p pieces at (0,1),(0,2),(1,2)
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[0, 1, 1], [0, 0, 1], [0, 0, 0]])), transform)
+			)
+			== 0
 		)
-		== 0
-	)
-	assert (
-		env2.get_current_player_score(
-			_make_state(env2, np.array([[1, 0, 0], [1, 1, 0], [0, 0, 1]]))
+		assert (
+			env2.get_current_player_score(
+				_apply_transformation(env2, _make_state(env2, np.array([[1, 0, 0], [1, 1, 0], [0, 0, 1]])), transform)
+			)
+			== 1
 		)
-		== 1
-	)
 
 
 def test_three_dims_scoring():
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 0, 0], [1, 0, 0], [1, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 1, 1], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [1, 0, 0]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 1, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 1], [0, 0, 0], [0, 0, 0]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 1, 0], [0, 0, 0]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 1]],
-					]
-				),
-			)
-		)
-		== 1
-	)
-	assert env3.get_current_player_score(_make_state(env3, np.ones((3, 3, 3), dtype=int))) == 49
-	assert (
-		env3.get_current_player_score(
-			_make_state(
-				env3,
-				np.array(
-					[
-						[[0, 1, 1], [1, 0, 1], [1, 1, 0]],
-						[[1, 0, 1], [0, 0, 0], [1, 0, 1]],
-						[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-					]
-				),
-			)
-		)
-		== 0
-	)
-
-
-def test_four_dims_scoring():
-	assert env4.get_current_player_score(_make_state(env4, np.zeros((3, 3, 3, 3), dtype=int))) == 0
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+	for transform in env3._board_transformations:
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
 						[
 							[[1, 0, 0], [1, 0, 0], [1, 0, 0]],
 							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
 							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+						]
+					),
+				), transform)
 			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
+						[
+							[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+						]
+					),
+				), transform)
+			)
+			== 1
+		)
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
+						[
+							[[1, 1, 1], [0, 0, 0], [0, 0, 0]],
+							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+						]
+					),
+				), transform)
+			)
+			== 1
+		)
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
+						[
+							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+						]
+					),
+				), transform)
+			)
+			== 1
+		)
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
+						[
+							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+							[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
+							[[0, 0, 0], [0, 0, 0], [1, 0, 0]],
+						]
+					),
+				), transform)
+			)
+			== 1
+		)
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
+						[
+							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+							[[0, 1, 0], [0, 0, 0], [0, 0, 0]],
+							[[0, 0, 1], [0, 0, 0], [0, 0, 0]],
+						]
+					),
+				), transform)
+			)
+			== 1
+		)
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
 						[
 							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
 							[[0, 0, 0], [0, 1, 0], [0, 0, 0]],
 							[[0, 0, 0], [0, 0, 0], [0, 0, 1]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+						]
+					),
+				), transform)
 			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+		assert env3.get_current_player_score(_make_state(env3, np.ones((3, 3, 3), dtype=int))) == 49
+		assert (
+			env3.get_current_player_score(
+				_apply_transformation(env3, _make_state(
+					env3,
+					np.array(
 						[
-							[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
+							[[0, 1, 1], [1, 0, 1], [1, 1, 0]],
+							[[1, 0, 1], [0, 0, 0], [1, 0, 1]],
 							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 1, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 1], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+						]
+					),
+				), transform)
 			)
+			== 0
 		)
-		== 1
-	)
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+
+
+def test_four_dims_scoring():
+	for transform in env4._board_transformations:
+		assert env4.get_current_player_score(_make_state(env4, np.zeros((3, 3, 3, 3), dtype=int))) == 0
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
 						[
-							[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 1, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 1], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+							[
+								[[1, 0, 0], [1, 0, 0], [1, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
 			)
+			== 1
 		)
-		== 1
-	)
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
 						[
-							[[1, 1, 1], [1, 1, 1], [1, 1, 1]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+							[
+								[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 1]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
 			)
+			== 1
 		)
-		== 8
-	)
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
 						[
-							[[1, 0, 1], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+							[
+								[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 1], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
 			)
+			== 1
 		)
-		== 0
-	)
-	assert (
-		env4.get_current_player_score(
-			_make_state(
-				env4,
-				np.array(
-					[
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
 						[
-							[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-						[
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
-							[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
-						],
-					]
-				),
+							[
+								[[1, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 1, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 1], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
 			)
+			== 1
 		)
-		== 0
-	)
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
+						[
+							[
+								[[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
+			)
+			== 8
+		)
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
+						[
+							[
+								[[1, 0, 1], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
+			)
+			== 0
+		)
+		assert (
+			env4.get_current_player_score(
+				_apply_transformation(env4, _make_state(
+					env4,
+					np.array(
+						[
+							[
+								[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+							[
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [1, 0, 0], [0, 0, 0]],
+								[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+							],
+						]
+					),
+				), transform)
+			)
+			== 0
+		)

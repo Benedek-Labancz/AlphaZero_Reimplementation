@@ -24,7 +24,7 @@ def test_play_episode(EnvClass):
     root_node = Node(env=env, state=env.get_board_state())
     tree = Tree(root=root_node)
     num_squares = env.get_board_size() ** env.get_num_dimensions()
-    policy_net = PolicyScoreNetwork(num_res_blocks=4, 
+    policy_net = PolicyScoreNetwork(num_res_blocks=1, 
                                     input_size=num_squares, 
                                     output_size=num_squares, 
                                     in_channels=6)
