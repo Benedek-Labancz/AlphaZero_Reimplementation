@@ -5,7 +5,7 @@ This is a reimplementation of the AlphaZero algorithm as described by [Silver et
 We use PyTorch and Numpy as the primary backend.
 
 The algorithm is applied to a custom game of repeated multi-dimensional TicTacToe, 
-but could be easily adopted to play any other two-player perfect information game.
+but could be easily adapted to play any other two-player perfect information game.
 
 
 ### Main Features
