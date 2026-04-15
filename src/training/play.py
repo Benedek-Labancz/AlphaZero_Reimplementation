@@ -1,3 +1,5 @@
+from typing import Callable
+
 import numpy as np
 
 from src.mcts.tree import Tree, Node
@@ -16,7 +18,7 @@ def select_az_action(rng, tree: Tree, policy, num_simulations: int, c: float, **
         c=c,
         tau=1 # we do not care about this, as we're doing argmax
     )
-    print(pi_values)
+    # print(pi_values)
     max_visit_count_idx = np.argmax(pi_values)
     action = tree.root.valid_actions[max_visit_count_idx]
     return action
@@ -26,8 +28,8 @@ def play_episodes(rng,
                   env, 
                     best_policy, 
                     candidate_policy,
-                    best_select_action_fn: callable,
-                    candidate_select_action_fn: callable,
+                    best_select_action_fn: Callable,
+                    candidate_select_action_fn: Callable,
                     num_games: int, 
                     num_simulations: int,
                     c: float,
@@ -40,6 +42,7 @@ def play_episodes(rng,
     
     '''
     num_wins = [0, 0]
+    scores = [[], []]
     policies = [best_policy, candidate_policy]
     select_action_fns = [best_select_action_fn, candidate_select_action_fn]
     for i in range(num_games):
@@ -84,5 +87,9 @@ def play_episodes(rng,
             num_wins[current_player] += 1
         elif winner == -1:
             num_wins[1 - current_player] += 1
+        scores[current_player].append(env.get_current_player_score(state=state))
+        scores[1 - current_player].append(env.get_current_player_score(state=env.switched_player_state(state=state)))
     env.close()
-    return num_wins
+    print(scores)
+    avg_scores = [np.mean(scores[0]), np.mean(scores[1])]
+    return num_wins, avg_scores
