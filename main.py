@@ -9,6 +9,7 @@ import numpy as np
 from numpy.random import SeedSequence, default_rng
 import torch
 import torch.multiprocessing as mp
+from queue import Empty
 from torch.optim import SGD
 from torch.optim.lr_scheduler import StepLR
 from collections import deque
@@ -57,6 +58,13 @@ def get_policy(state_dict, config):
     policy.load_state_dict(state_dict)
     return policy
 
+def drain_queue(queue, buffer, timeout=0.25):
+    while True:
+        try:
+            buffer.append(queue.get(timeout=timeout))
+        except Empty:
+            break
+
 def self_play_worker(child_seed,
                      env, 
                      wandb_run,
@@ -67,6 +75,7 @@ def self_play_worker(child_seed,
                      episode_counter,
                      update_counter,
                      episode_time,
+                     promotion_event,
                      initial_model_weights):
     print(f"Self-play worker affinity: {psutil.Process().cpu_affinity()}")
     rng = seed_worker(child_seed)
@@ -79,6 +88,11 @@ def self_play_worker(child_seed,
         if new_best_weights_available:
             policy.load_state_dict(model_weights)
             print("New best policy loaded.")
+            promotion_event.set()
+            print("Promotion flag set.")
+            # Wait for the training worker to acknowledge the promotion and clear data buffer
+            print("\rWaiting for training worker to acknowledge.", end="")
+            promotion_event.wait()
         b = time.time()
         env.reset()
         data = self_play_episode(
@@ -115,6 +129,7 @@ def train_policy_worker(child_seed,
                         update_counter,
                         eval_counter,
                         update_time,
+                        promotion_event,
                         initial_model_weights):
     
     print(f"Train-policy worker affinity: {psutil.Process().cpu_affinity()}")
@@ -135,6 +150,20 @@ def train_policy_worker(child_seed,
     data_buffer = deque(maxlen=config["training"]["buffer_size"])
 
     while update_counter.value < config["global"]["num_updates"]:
+        try:
+            drain_queue(data_queue, data_buffer)
+        except ValueError:
+            print("Data Queue has been closed. Aborting Training.")
+            break
+        if promotion_event.is_set():
+            with lock:
+                drain_queue(data_queue, data_buffer) # Clear any remaining data from the queue
+                data_buffer.clear()
+                promotion_event.clear()
+                print("Promotion acknowledged. Data buffer cleared.")
+                continue
+        if len(data_buffer) < config["training"]["batch_size"]: # not enough examples to form batch
+            continue
         # Control the rate of policy updates on several levels
         # Wait for self-play episode / policy update ratio
         if update_counter.value > 0:
@@ -144,14 +173,6 @@ def train_policy_worker(child_seed,
         if update_counter.value >= config["training"]["checkpoint_frequency"]:
             while (eval_counter.value / (update_counter.value // config["training"]["checkpoint_frequency"])) != 1:
                 continue
-        try:
-            while not data_queue.empty():
-                data_buffer.append(data_queue.get())
-        except ValueError:
-            print("Data Queue has been closed. Aborting Training.")
-            break
-        if len(data_buffer) < config["training"]["batch_size"]:
-            continue
 
         b = time.time()
         # Sample and batch data
@@ -164,8 +185,8 @@ def train_policy_worker(child_seed,
             states.append(s)
             pi_values.append(pi)
             winners.append(z)
-        states = np.vstack(np.array(states))
-        pi_values = np.vstack(np.array(pi_values))
+        states = np.vstack(states)
+        pi_values = np.vstack(pi_values)
         winners = np.array(winners).reshape(-1)
         batch_loss = train_batch(
             data=(states, pi_values, winners),
@@ -185,6 +206,8 @@ def train_policy_worker(child_seed,
             print(f'Last update took {round(up_time, 3)}s.', file=f)
             print(f'Average checkpoint rate: {round((update_time.value / update_counter.value) * config["training"]["checkpoint_frequency"], 3)}s/checkpoint', file=f)
             print(f'Batch size: {config["training"]["batch_size"]}', file=f)
+            print(f'Episodes in buffer: {len(data_buffer)}', file=f)
+            print(f'Approximate Queue length: {data_queue.qsize()}', file=f)
         if update_counter.value % config["training"]["checkpoint_frequency"] == 0:
             checkpoint_queue.put(policy.state_dict())
             save_checkpoint(
@@ -222,7 +245,7 @@ def eval_worker(child_seed,
         b = time.time()
         candidate_policy = get_policy(candidate_weights, config)
         with lock:
-            num_wins = play_episodes(
+            num_wins, avg_scores = play_episodes(
                 rng=rng,
                 env=env,
                 best_policy=best_policy,
@@ -236,6 +259,7 @@ def eval_worker(child_seed,
         win_rate = num_wins[1] / config["eval"]["num_games"]
         wandb_run.log({'num_losses_vs_best': num_wins[0]})
         wandb_run.log({'num_wins_vs_best': num_wins[1]})
+        wandb_run.log({'avg_score_vs_best': avg_scores[1]})
         if num_wins[0] < num_wins[1] or num_wins == [0, 0]:
             new_best_weights = candidate_policy.state_dict()
             to_self_play_conn.send(new_best_weights)
@@ -250,7 +274,7 @@ def eval_worker(child_seed,
                 promotion_counter.value += 1
             # Evaluate against minimax
             with lock:
-                num_wins_m = play_episodes(
+                num_wins_m, avg_scores_m = play_episodes(
                     rng=rng,
                     env=env,
                     best_policy=best_policy,
@@ -265,7 +289,8 @@ def eval_worker(child_seed,
                 )
                 wandb_run.log({f'num_losses_vs_minimax-{config["eval"]["minimax_max_depth"]}': num_wins_m[0]})
                 wandb_run.log({f'num_wins_vs_minimax-{config["eval"]["minimax_max_depth"]}': num_wins_m[1]})
-                num_wins_r = play_episodes(
+                wandb_run.log({f'avg_score_vs_minimax-{config["eval"]["minimax_max_depth"]}': avg_scores_m[1]})
+                num_wins_r, avg_scores_r = play_episodes(
                     rng=rng,
                     env=env,
                     best_policy=best_policy,
@@ -278,6 +303,7 @@ def eval_worker(child_seed,
                 )
                 wandb_run.log({'num_losses_vs_random': num_wins_r[0]})
                 wandb_run.log({'num_wins_vs_random': num_wins_r[1]})
+                wandb_run.log({'avg_score_vs_random': avg_scores_r[1]})
         e = time.time()
         ev_time = e - b
         with lock:
@@ -327,6 +353,7 @@ if __name__ == '__main__':
     episode_time = mp.Value('f', 0)
     update_time = mp.Value('f', 0)
     eval_time = mp.Value('f', 0)
+    promotion_event = mp.Event()
     
     data_queue = mp.Queue()
     checkpoint_queue = mp.Queue()
@@ -346,6 +373,7 @@ if __name__ == '__main__':
             episode_counter,
             update_counter,
             episode_time,
+            promotion_event,
             initial_model_weights
         )
     )
@@ -364,6 +392,7 @@ if __name__ == '__main__':
             update_counter,
             eval_counter,
             update_time,
+            promotion_event,
             initial_model_weights
         )
     )
